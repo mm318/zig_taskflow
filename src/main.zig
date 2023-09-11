@@ -1,54 +1,66 @@
 const std = @import("std");
-const taskflow = @import("taskflow/task.zig");
+const Flow = @import("taskflow/flow.zig");
+const Task = @import("taskflow/task.zig");
 
-const Node = struct {
-    name: []const u8,
-    depends_on: []const *Node,
-
-    pub fn print_dependencies(self: Node) void {
-        std.debug.print("node \"{s}\" depends on:\n", .{self.name});
-        for (self.depends_on) |dependency| {
-            std.debug.print("  {s}", .{dependency.name});
-        }
-        std.debug.print("\n", .{});
-    }
+const DummyError = error{
+    Error1,
+    Error2,
+    Error3,
 };
 
-fn dummyTaskFunc(_: ?*const i32, _: ?*const u32, _: ?*const usize) struct { u8, f16, f32 } {
+const DummyStruct = struct {
+    name: []const u8,
+    depends_on: []const *DummyStruct,
+};
+
+fn dummyTaskFunc1(_: *const i32, _: *const u32, _: *const usize) struct { u8, f16, f32 } {
     return .{ 0, 0, 0 };
 }
 
-pub fn main() anyerror!void {
-    var node1 = Node{
-        .name = "node1",
-        .depends_on = &[_]*Node{},
-    };
-    node1.depends_on = &[_]*Node{&node1};
-    node1.print_dependencies();
+fn dummyTaskFunc2(_: *const u8, _: *const f32, _: *const f16) struct { DummyStruct, DummyError } {
+    return .{ DummyStruct{ .name = "dummy1", .depends_on = undefined }, DummyError.Error1 };
+}
 
-    const var1: i32 = 1;
-    const var2: u32 = 2;
-    const var3: usize = 3;
-
-    const TestFlowTask = taskflow.createTaskType(
-        &.{ i32, u32, usize },
-        &.{ u8, f16, f32 },
-    );
-
-    var task = TestFlowTask.init(.{ &var1, &var2, &var3 }, .{ 0, 0, 0 }, &dummyTaskFunc);
-    std.debug.print("\nDebug post-createTaskType():\n", .{});
+fn printTaskInfo(task: anytype, header: []const u8) void {
+    std.debug.print("\nDebug {s}:\n", .{header});
     inline for (0.., @typeInfo(@TypeOf(task.internals)).Struct.fields) |i, f| {
-        std.debug.print("TestFlowTask field{} is {s} (type: {})\n", .{ i, f.name, f.type });
+        std.debug.print("TestFlowTask field{} is \"{s}\" (type: {})\n", .{ i, f.name, f.type });
         if (@typeInfo(f.type) == .Struct) {
             inline for (0.., @typeInfo(f.type).Struct.fields) |j, g| {
-                std.debug.print("\t{s} field{} is {s} (type: {})\n", .{ f.name, j, g.name, g.type });
+                const value = @field(@field(task.internals, f.name), g.name);
+                std.debug.print("\t{s} field{} is \"{s}\" (type: {}) = {?}\n", .{ f.name, j, g.name, g.type, value });
             }
         }
     }
-
-    task.execute();
 }
 
-test "whatever" {
-    try std.testing.expectEqual(10, 3 + 7);
+pub fn main() anyerror!void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var allocator = gpa.allocator();
+    defer {
+        const deinit_status = gpa.deinit();
+        std.debug.assert(deinit_status != .leak);
+    }
+
+    const TestTaskType1 = Task.createTaskType(
+        &.{ i32, u32, usize },
+        &.{ u8, f16, f32 },
+    );
+    const TestTaskType2 = Task.createTaskType(
+        &.{ u8, f32, f16 },
+        &.{ DummyStruct, DummyError },
+    );
+
+    var flowgraph = Flow.init(&allocator);
+    defer flowgraph.free();
+
+    var task1 = try flowgraph.newTask(TestTaskType1, undefined, .{ 0, 0, 0 }, &dummyTaskFunc1);
+    var task2 = try flowgraph.newTask(TestTaskType2, undefined, .{ DummyStruct{ .name = "none", .depends_on = undefined }, DummyError.Error3 }, &dummyTaskFunc2);
+    printTaskInfo(task1, "post-createTaskType()");
+    printTaskInfo(task2, "post-createTaskType()");
+
+    task1.execute();
+    task2.execute();
+    printTaskInfo(task1, "post-execute()");
+    printTaskInfo(task2, "post-execute()");
 }

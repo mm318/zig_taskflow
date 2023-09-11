@@ -118,13 +118,17 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
     } });
 }
 
-const Task = struct {
-    executeFn: *const fn (self: *Task) void,
+const Task = @This();
+executeFn: *const fn (self: *Task) void,
+freeFn: *const fn (self: *Task, allocator: *std.mem.Allocator) void,
 
-    pub fn execute(self: *Task) void {
-        self.executeFn(self);
-    }
-};
+pub fn execute(self: *Task) void {
+    self.executeFn(self);
+}
+
+pub fn free(self: *Task, allocator: *std.mem.Allocator) void {
+    self.freeFn(self, allocator);
+}
 
 pub fn createTaskType(comptime input_types: []const type, comptime output_types: []const type) type {
     const Internals = createTaskInternalsType(input_types, output_types);
@@ -134,30 +138,36 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
         interface: Task,
         internals: Internals,
 
-        pub fn init(initial_inputs: anytype, initial_outputs: anytype, func_ptr: anytype) Self {
+        pub fn new(a: *std.mem.Allocator, init_inputs: anytype, init_outputs: anytype, func_ptr: anytype) !*Self {
             const impl = struct {
                 pub fn execute(ptr: *Task) void {
                     const self = @fieldParentPtr(Self, "interface", ptr);
                     self.execute();
                 }
+                pub fn free(ptr: *Task, allocator: *std.mem.Allocator) void {
+                    const self = @fieldParentPtr(Self, "interface", ptr);
+                    self.free(allocator);
+                }
             };
 
-            return Self{ .interface = Task{ .executeFn = impl.execute }, .internals = Internals{ .inputs = initial_inputs, .func = func_ptr, .outputs = initial_outputs } };
+            const result = try a.create(Self);
+            errdefer a.destroy(result);
+
+            result.* = Self{ .interface = Task{ .executeFn = impl.execute, .freeFn = impl.free }, .internals = Internals{ .inputs = init_inputs, .func = func_ptr, .outputs = init_outputs } };
+            return result;
         }
 
         pub fn execute(self: *Self) void {
-            std.debug.print("\nDebug executeTask():\n", .{});
-            inline for (0.., @typeInfo(@TypeOf(self.internals.inputs)).Struct.fields) |i, f| {
-                std.debug.print("task field{} is {s}: (type: {})\n", .{ i, f.name, f.type });
-            }
-
             const Args = std.meta.ArgsTuple(@typeInfo(@TypeOf(self.internals.func)).Pointer.child);
             var args: Args = undefined;
             inline for (0.., std.meta.fields(Args)) |i, _| {
                 args[i] = self.internals.inputs[i].?;
             }
-
             self.internals.outputs = @call(std.builtin.CallModifier.auto, self.internals.func, args);
+        }
+
+        pub fn free(self: *Self, a: *std.mem.Allocator) void {
+            a.destroy(self);
         }
     };
 
