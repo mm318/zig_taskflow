@@ -1,5 +1,20 @@
 const std = @import("std");
 
+const inputs_field_name = "inputs";
+const outputs_field_name = "outputs";
+
+const Task = @This();
+executeFn: *const fn (self: *Task) void,
+freeFn: *const fn (self: *Task, allocator: *std.mem.Allocator) void,
+
+pub fn execute(self: *Task) void {
+    self.executeFn(self);
+}
+
+pub fn free(self: *Task, allocator: *std.mem.Allocator) void {
+    self.freeFn(self, allocator);
+}
+
 fn createTaskInternalsType(comptime input_types: []const type, comptime output_types: []const type) type {
     var input_pointer_types: [input_types.len]type = undefined;
     for (0.., input_types) |i, t| {
@@ -63,7 +78,7 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
         .is_tuple = true,
     } });
     const input_field: std.builtin.Type.StructField = .{
-        .name = "inputs",
+        .name = inputs_field_name,
         .type = input_type,
         .default_value = null,
         .is_comptime = false,
@@ -77,7 +92,7 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
         .is_tuple = true,
     } });
     const output_field: std.builtin.Type.StructField = .{
-        .name = "outputs",
+        .name = outputs_field_name,
         .type = output_type,
         .default_value = null,
         .is_comptime = false,
@@ -118,18 +133,6 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
     } });
 }
 
-const Task = @This();
-executeFn: *const fn (self: *Task) void,
-freeFn: *const fn (self: *Task, allocator: *std.mem.Allocator) void,
-
-pub fn execute(self: *Task) void {
-    self.executeFn(self);
-}
-
-pub fn free(self: *Task, allocator: *std.mem.Allocator) void {
-    self.freeFn(self, allocator);
-}
-
 pub fn createTaskType(comptime input_types: []const type, comptime output_types: []const type) type {
     const Internals = createTaskInternalsType(input_types, output_types);
 
@@ -155,6 +158,14 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
 
             result.* = Self{ .interface = Task{ .executeFn = impl.execute, .freeFn = impl.free }, .internals = Internals{ .inputs = init_inputs, .func = func_ptr, .outputs = init_outputs } };
             return result;
+        }
+
+        pub fn setInput(self: *Self, comptime input_idx: usize, source: anytype, comptime output_idx: usize) void {
+            var fi = @field(self.internals, inputs_field_name);
+            const gi = @typeInfo(@TypeOf(fi)).Struct.fields[input_idx];
+            const fo = @field(source.internals, outputs_field_name);
+            const go = @typeInfo(@TypeOf(fo)).Struct.fields[output_idx];
+            @field(fi, gi.name) = &@field(fo, go.name);
         }
 
         pub fn execute(self: *Self) void {

@@ -24,11 +24,11 @@ fn dummyTaskFunc2(_: *const u8, _: *const f32, _: *const f16) struct { DummyStru
 fn printTaskInfo(task: anytype, header: []const u8) void {
     std.debug.print("\nDebug {s}:\n", .{header});
     inline for (0.., @typeInfo(@TypeOf(task.internals)).Struct.fields) |i, f| {
-        std.debug.print("TestFlowTask field{} is \"{s}\" (type: {})\n", .{ i, f.name, f.type });
+        std.debug.print("TestFlowTask field [{}] is named \"{s}\" (type: {})\n", .{ i, f.name, f.type });
         if (@typeInfo(f.type) == .Struct) {
             inline for (0.., @typeInfo(f.type).Struct.fields) |j, g| {
                 const value = @field(@field(task.internals, f.name), g.name);
-                std.debug.print("\t{s} field{} is \"{s}\" (type: {}) = {?}\n", .{ f.name, j, g.name, g.type, value });
+                std.debug.print("\t{s}[{}] is named \"{s}\" (type: {}) = {?}\n", .{ f.name, j, g.name, g.type, value });
             }
         }
     }
@@ -58,6 +58,10 @@ pub fn main() anyerror!void {
     var task2 = try flowgraph.newTask(TestTaskType2, undefined, .{ DummyStruct{ .name = "none", .depends_on = undefined }, DummyError.Error3 }, &dummyTaskFunc2);
     printTaskInfo(task1, "post-createTaskType()");
     printTaskInfo(task2, "post-createTaskType()");
+
+    flowgraph.connect(task1, 0, task2, 0);
+    flowgraph.connect(task1, 1, task2, 2);
+    flowgraph.connect(task1, 2, task2, 1);
 
     task1.execute();
     task2.execute();

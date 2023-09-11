@@ -15,6 +15,10 @@ pub fn newTask(self: *Flow, comptime TaskType: type, init_inputs: anytype, init_
     return result;
 }
 
+pub fn connect(_: *Flow, src_task: anytype, comptime output_idx: usize, dst_task: anytype, comptime input_idx: usize) void {
+    dst_task.setInput(input_idx, src_task, output_idx);
+}
+
 pub fn free(self: *Flow) void {
     for (self.tasks.items) |task| {
         task.free(self.allocator);
