@@ -34,7 +34,7 @@ fn printTaskInfo(task: anytype, header: []const u8) void {
     }
 }
 
-pub fn main() anyerror!void {
+test "everything" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();
     defer {
