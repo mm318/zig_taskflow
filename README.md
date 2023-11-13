@@ -22,6 +22,13 @@ To run tests:
 zig build test --summary all
 ```
 
+### Develop
+
+To format the source code:
+```bash
+zig fmt src/
+```
+
 
 ## Requirements
 

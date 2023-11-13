@@ -11,25 +11,36 @@ const DummyError = error{
 const DummyStruct = struct {
     name: []const u8,
     depends_on: []const *DummyStruct,
+    value: f32,
 };
 
 fn dummyTaskFunc1(_: *const i32, _: *const u32, _: *const usize) struct { u8, f16, f32 } {
-    return .{ 0, 0, 0 };
+    return .{ 7, -1.234, -5.678 };
 }
 
-fn dummyTaskFunc2(_: *const u8, _: *const f32, _: *const f16) struct { DummyStruct, DummyError } {
-    return .{ DummyStruct{ .name = "dummy1", .depends_on = undefined }, DummyError.Error1 };
+fn dummyTaskFunc2(input1: *const u8, input2: *const f32, input3: *const f16) struct { DummyStruct, DummyError } {
+    const sum: f32 = @as(f32, @floatFromInt(input1.*)) + input2.* + input3.*;
+    return .{ DummyStruct{ .name = "dummy1", .depends_on = &.{}, .value = sum }, DummyError.Error1 };
 }
 
-fn printTaskInfo(task: anytype, header: []const u8) void {
-    std.debug.print("\nDebug {s}:\n", .{header});
-    inline for (0.., @typeInfo(@TypeOf(task.internals)).Struct.fields) |i, f| {
-        std.debug.print("TestFlowTask field [{}] is named \"{s}\" (type: {})\n", .{ i, f.name, f.type });
-        if (@typeInfo(f.type) == .Struct) {
-            inline for (0.., @typeInfo(f.type).Struct.fields) |j, g| {
-                const value = @field(@field(task.internals, f.name), g.name);
-                std.debug.print("\t{s}[{}] is named \"{s}\" (type: {}) = {?}\n", .{ f.name, j, g.name, g.type, value });
+fn printTaskInfo(task: anytype, task_name: []const u8, header: []const u8) void {
+    std.debug.print("\nDebug {s} {s}:\n", .{ task_name, header });
+    inline for (0.., @typeInfo(@TypeOf(task.internals)).Struct.fields) |i, task_field| {
+        _ = i;
+        if (@typeInfo(task_field.type) == .Struct) {
+            std.debug.print("{s} {s}\n", .{ task_name, task_field.name });
+            inline for (0.., @typeInfo(task_field.type).Struct.fields) |j, io_struct_field| {
+                const value_ptr = &@field(@field(task.internals, task_field.name), io_struct_field.name);
+                const value = value_ptr.*;
+                if (std.mem.eql(u8, task_field.name, "inputs")) {
+                    std.debug.print("\t{s}[{}] ({}) = {?}\n", .{ task_field.name, j, io_struct_field.type, value });
+                } else {
+                    std.debug.print("\t{s}[{}] ({}) = {?} ({*})\n", .{ task_field.name, j, io_struct_field.type, value, value_ptr });
+                }
             }
+        } else {
+            std.debug.print("{s} {s}\n", .{ task_name, task_field.name });
+            std.debug.print("\t{}\n", .{task_field.type});
         }
     }
 }
@@ -54,10 +65,10 @@ test "everything" {
     var flowgraph = Flow.init(&allocator);
     defer flowgraph.free();
 
-    var task1 = try flowgraph.newTask(TestTaskType1, undefined, .{ 0, 0, 0 }, &dummyTaskFunc1);
-    var task2 = try flowgraph.newTask(TestTaskType2, undefined, .{ DummyStruct{ .name = "none", .depends_on = undefined }, DummyError.Error3 }, &dummyTaskFunc2);
-    printTaskInfo(task1, "post-createTaskType()");
-    printTaskInfo(task2, "post-createTaskType()");
+    var task1 = try flowgraph.newTask(TestTaskType1, .{ 0, 0, 0 }, &dummyTaskFunc1);
+    var task2 = try flowgraph.newTask(TestTaskType2, .{ DummyStruct{ .name = "none", .depends_on = undefined, .value = undefined }, DummyError.Error3 }, &dummyTaskFunc2);
+    printTaskInfo(task1, "task1", "post-createTaskType()");
+    printTaskInfo(task2, "task2", "post-createTaskType()");
 
     flowgraph.connect(task1, 0, task2, 0);
     flowgraph.connect(task1, 1, task2, 2);
@@ -65,6 +76,6 @@ test "everything" {
 
     task1.execute();
     task2.execute();
-    printTaskInfo(task1, "post-execute()");
-    printTaskInfo(task2, "post-execute()");
+    printTaskInfo(task1, "task1", "post-execute()");
+    printTaskInfo(task2, "task2", "post-execute()");
 }

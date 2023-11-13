@@ -161,11 +161,17 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
         }
 
         pub fn setInput(self: *Self, comptime input_idx: usize, source: anytype, comptime output_idx: usize) void {
-            var fi = @field(self.internals, inputs_field_name);
-            const gi = @typeInfo(@TypeOf(fi)).Struct.fields[input_idx];
-            const fo = @field(source.internals, outputs_field_name);
-            const go = @typeInfo(@TypeOf(fo)).Struct.fields[output_idx];
-            @field(fi, gi.name) = &@field(fo, go.name);
+            const src_outputs = @field(source.internals, outputs_field_name);
+            const src_output_field = @typeInfo(@TypeOf(src_outputs)).Struct.fields[output_idx];
+            const src_output_field_offset = @offsetOf(@TypeOf(source.internals), outputs_field_name) + @offsetOf(@TypeOf(src_outputs), src_output_field.name);
+            const src_ptr: *src_output_field.type = @ptrFromInt(@intFromPtr(&source.internals) + src_output_field_offset);
+
+            const dst_inputs = @field(self.internals, inputs_field_name);
+            const dst_input_field = @typeInfo(@TypeOf(dst_inputs)).Struct.fields[input_idx];
+            const dst_input_field_offset = @offsetOf(@TypeOf(self.internals), inputs_field_name) + @offsetOf(@TypeOf(dst_inputs), dst_input_field.name);
+            const dst_ptr: *dst_input_field.type = @ptrFromInt(@intFromPtr(&self.internals) + dst_input_field_offset);
+
+            dst_ptr.* = src_ptr;
         }
 
         pub fn execute(self: *Self) void {
