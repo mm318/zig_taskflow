@@ -19,6 +19,12 @@ pub fn connect(_: *Flow, src_task: anytype, comptime output_idx: usize, dst_task
     dst_task.setInput(input_idx, src_task, output_idx);
 }
 
+pub fn execute(self: Flow) void {
+    for (self.tasks.items) |task| {
+        task.execute();
+    }
+}
+
 pub fn free(self: *Flow) void {
     for (self.tasks.items) |task| {
         task.free(self.allocator);

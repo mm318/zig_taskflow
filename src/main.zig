@@ -74,8 +74,7 @@ test "everything" {
     flowgraph.connect(task1, 1, task2, 2);
     flowgraph.connect(task1, 2, task2, 1);
 
-    task1.execute();
-    task2.execute();
+    flowgraph.execute();
     printTaskInfo(task1, "task1", "post-execute()");
     printTaskInfo(task2, "task2", "post-execute()");
 }
