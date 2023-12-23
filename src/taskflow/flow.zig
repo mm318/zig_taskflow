@@ -1,12 +1,14 @@
 const std = @import("std");
 const Task = @import("task.zig");
+const Graph = @import("zig-graph").DirectedGraph(*Task, std.hash_map.AutoContext(*Task));
 
 const Flow = @This();
 tasks: std.ArrayList(*Task),
+graph: Graph,
 allocator: *std.mem.Allocator,
 
 pub fn init(a: *std.mem.Allocator) Flow {
-    return Flow{ .tasks = std.ArrayList(*Task).init(a.*), .allocator = a };
+    return Flow{ .tasks = std.ArrayList(*Task).init(a.*), .graph = Graph.init(a.*), .allocator = a };
 }
 
 pub fn newTask(self: *Flow, comptime TaskType: type, init_outputs: anytype, func_ptr: anytype) !*TaskType {
