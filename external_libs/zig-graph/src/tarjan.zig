@@ -96,12 +96,12 @@ fn stronglyConnectedStep(
         const targetIdx = acc.map.get(target) orelse 0;
 
         if (targetIdx == 0) {
-            minIdx = math.min(
+            minIdx = @min(
                 minIdx,
                 stronglyConnectedStep(allocator, g, acc, result, target),
             );
         } else if (acc.inStack(target)) {
-            minIdx = math.min(minIdx, targetIdx);
+            minIdx = @min(minIdx, targetIdx);
         }
     }
 

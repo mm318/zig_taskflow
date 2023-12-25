@@ -14,6 +14,10 @@ const DummyStruct = struct {
     value: f32,
 };
 
+fn dummyTaskFunc(input1: *const DummyStruct, input2: *const DummyError) struct { DummyStruct, DummyError } {
+    return .{ input1.*, input2.* };
+}
+
 fn dummyTaskFunc1(_: *const i32, _: *const u32, _: *const usize) struct { u8, f16, f32 } {
     return .{ 7, -1.234, -5.678 };
 }
@@ -45,7 +49,37 @@ fn printTaskInfo(task: anytype, task_name: []const u8, header: []const u8) void 
     }
 }
 
-test "everything" {
+test "cycle detection" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var allocator = gpa.allocator();
+    defer {
+        const deinit_status = gpa.deinit();
+        std.debug.assert(deinit_status != .leak);
+    }
+
+    const TestTaskType = Task.createTaskType(
+        &.{ DummyStruct, DummyError },
+        &.{ DummyStruct, DummyError },
+    );
+
+    var flowgraph = Flow.init(&allocator);
+    defer flowgraph.free();
+
+    var task1 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "1", .depends_on = undefined, .value = undefined }, DummyError.Error1 }, &dummyTaskFunc);
+    var task2 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "2", .depends_on = undefined, .value = undefined }, DummyError.Error2 }, &dummyTaskFunc);
+    var task3 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "3", .depends_on = undefined, .value = undefined }, DummyError.Error3 }, &dummyTaskFunc);
+
+    try flowgraph.connect(task1, 0, task2, 0);
+    try flowgraph.connect(task1, 1, task2, 1);
+    try flowgraph.connect(task2, 0, task3, 0);
+    try flowgraph.connect(task2, 1, task3, 1);
+    try flowgraph.connect(task3, 0, task1, 0); // this creates a cycle
+    try flowgraph.connect(task3, 1, task1, 1); // this creates a cycle
+
+    try std.testing.expectError(Flow.Error.CyclicDependencyGraph, flowgraph.execute());
+}
+
+test "integration test" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();
     defer {
@@ -70,11 +104,11 @@ test "everything" {
     printTaskInfo(task1, "task1", "post-createTaskType()");
     printTaskInfo(task2, "task2", "post-createTaskType()");
 
-    flowgraph.connect(task1, 0, task2, 0);
-    flowgraph.connect(task1, 1, task2, 2);
-    flowgraph.connect(task1, 2, task2, 1);
+    try flowgraph.connect(task1, 0, task2, 0);
+    try flowgraph.connect(task1, 1, task2, 2);
+    try flowgraph.connect(task1, 2, task2, 1);
 
-    flowgraph.execute();
+    try flowgraph.execute();
     printTaskInfo(task1, "task1", "post-execute()");
     printTaskInfo(task2, "task2", "post-execute()");
 }
