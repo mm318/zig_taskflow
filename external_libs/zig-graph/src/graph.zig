@@ -146,7 +146,7 @@ pub fn DirectedGraph(
         /// as a result of algorithms such as strongly connected components
         /// since it is easier to work with. This function can be called to
         /// get the real value.
-        pub fn lookup(self: *Self, hash: u64) ?T {
+        pub fn lookup(self: Self, hash: u64) ?T {
             return self.values.get(hash);
         }
 
@@ -351,6 +351,74 @@ pub fn DirectedGraph(
                 }
 
                 return result;
+            }
+        };
+
+        /// bfsIterator returns an iterator that iterates all reachable
+        /// vertices from "roots". Note that the BFSIterator must have
+        /// deinit called.
+        pub fn bfsIterator(self: *const Self) !BFSIterator {
+            // We could pre-allocate some space here and assume we'll visit
+            // the full graph or something. Keeping it simple for now.
+            var queue = std.ArrayList(u64).init(self.allocator);
+            var visited = std.AutoHashMap(u64, void).init(self.allocator);
+
+            var it = self.adjIn.iterator();
+            while (it.next()) |source_kv| {
+                if (source_kv.value_ptr.count() == 0) {
+                    try queue.append(source_kv.key_ptr.*);
+                }
+            }
+
+            return BFSIterator{
+                .g = self,
+                .queue = queue,
+                .visited = visited,
+                .current = 0,
+            };
+        }
+
+        pub const BFSIterator = struct {
+            // Not the most efficient data structures for this, I know,
+            // but we can come back and optimize this later since its opaque.
+            //
+            // stack and visited must ensure capacity
+            g: *const Self,
+            queue: std.ArrayList(u64),
+            visited: std.AutoHashMap(u64, void),
+            current: usize, // index into queue
+
+            // BFSIterator must deinit
+            pub fn deinit(it: *BFSIterator) void {
+                it.queue.deinit();
+                it.visited.deinit();
+            }
+
+            pub fn next(it: *BFSIterator) !?T {
+                // If we're out of values, then we're done.
+                if (it.current >= it.queue.items.len) {
+                    return null;
+                }
+
+                // Our result is our current value
+                const result_hash = it.queue.items[it.current];
+                try it.visited.put(result_hash, {});
+
+                // Add all adjacent edges of current vertice to the queue.
+                // We do a visited check here to avoid revisiting vertices
+                if (it.g.adjOut.getPtr(result_hash)) |map| {
+                    var iter = map.keyIterator();
+                    while (iter.next()) |target| {
+                        if (!it.visited.contains(target.*)) {
+                            try it.queue.append(target.*);
+                        }
+                    }
+                }
+
+                // Advance to the next value
+                it.current += 1;
+
+                return it.g.lookup(result_hash);
             }
         };
     };

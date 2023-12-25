@@ -37,9 +37,20 @@ pub fn execute(self: Flow) !void {
         return Error.CyclicDependencyGraph;
     }
 
-    for (self.tasks.items) |task| {
-        task.execute();
+    var bfsIter = try self.graph.bfsIterator();
+    while (true) {
+        if (bfsIter.next()) |task_iter| {
+            if (task_iter) |task| {
+                task.execute();
+            } else {
+                break;
+            }
+        } else |err| {
+            std.log.err("error occurred: {}", .{err});
+            break;
+        }
     }
+    bfsIter.deinit();
 }
 
 pub fn free(self: *Flow) void {

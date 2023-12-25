@@ -26,7 +26,7 @@ zig build test --summary all
 
 To format the source code:
 ```bash
-zig fmt src/
+zig fmt .
 ```
 
 
