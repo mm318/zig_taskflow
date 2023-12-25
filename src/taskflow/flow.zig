@@ -46,7 +46,7 @@ pub fn execute(self: Flow) !void {
                 break;
             }
         } else |err| {
-            std.log.err("error occurred: {}", .{err});
+            std.log.err("error occurred while executing: {}", .{err});
             break;
         }
     }

@@ -183,6 +183,10 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
             self.internals.outputs = @call(std.builtin.CallModifier.auto, self.internals.func, args);
         }
 
+        pub fn getOutputPtr(self: Self, comptime output_idx: usize) *const output_types[output_idx] {
+            return &self.internals.outputs[output_idx];
+        }
+
         pub fn free(self: *Self, a: *std.mem.Allocator) void {
             a.destroy(self);
         }

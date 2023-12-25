@@ -112,9 +112,9 @@ test "integration test" {
     printTaskInfo(task1, "task1", "post-execute()");
     printTaskInfo(task2, "task2", "post-execute()");
 
-    try std.testing.expectEqual(@as(u8, 7), task1.internals.outputs[0]);
-    try std.testing.expectApproxEqRel(@as(f16, -1.234375), task1.internals.outputs[1], 0.0001);
-    try std.testing.expectApproxEqRel(@as(f32, -5.67799997), task1.internals.outputs[2], 0.0001);
-    try std.testing.expectEqualStrings("dummy1", task2.internals.outputs[0].name);
-    try std.testing.expectApproxEqRel(@as(f32, 8.76250267e-02), task2.internals.outputs[0].value, 0.0001);
+    try std.testing.expectEqual(@as(u8, 7), task1.getOutputPtr(0).*);
+    try std.testing.expectApproxEqRel(@as(f16, -1.234375), task1.getOutputPtr(1).*, 0.0001);
+    try std.testing.expectApproxEqRel(@as(f32, -5.67799997), task1.getOutputPtr(2).*, 0.0001);
+    try std.testing.expectEqualStrings("dummy1", task2.getOutputPtr(0).*.name);
+    try std.testing.expectApproxEqRel(@as(f32, 8.76250267e-02), task2.getOutputPtr(0).value, 0.0001);
 }
