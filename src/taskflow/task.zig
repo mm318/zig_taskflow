@@ -5,13 +5,13 @@ const outputs_field_name = "outputs";
 
 const Task = @This();
 executeFn: *const fn (self: *Task) void,
-freeFn: *const fn (self: *Task, allocator: *std.mem.Allocator) void,
+freeFn: *const fn (self: *Task, allocator: std.mem.Allocator) void,
 
 pub fn execute(self: *Task) void {
     self.executeFn(self);
 }
 
-pub fn free(self: *Task, allocator: *std.mem.Allocator) void {
+pub fn free(self: *Task, allocator: std.mem.Allocator) void {
     self.freeFn(self, allocator);
 }
 
@@ -141,13 +141,13 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
         interface: Task,
         internals: Internals,
 
-        pub fn new(a: *std.mem.Allocator, init_inputs: anytype, init_outputs: anytype, func_ptr: anytype) !*Self {
+        pub fn new(a: std.mem.Allocator, init_inputs: anytype, init_outputs: anytype, func_ptr: anytype) !*Self {
             const impl = struct {
                 pub fn execute(ptr: *Task) void {
                     const self = @fieldParentPtr(Self, "interface", ptr);
                     self.execute();
                 }
-                pub fn free(ptr: *Task, allocator: *std.mem.Allocator) void {
+                pub fn free(ptr: *Task, allocator: std.mem.Allocator) void {
                     const self = @fieldParentPtr(Self, "interface", ptr);
                     self.free(allocator);
                 }
@@ -188,7 +188,7 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
             return &(self.internals.outputs[output_idx]);
         }
 
-        pub fn free(self: *Self, a: *std.mem.Allocator) void {
+        pub fn free(self: *Self, a: std.mem.Allocator) void {
             a.destroy(self);
         }
     };

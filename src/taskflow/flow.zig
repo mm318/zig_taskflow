@@ -8,12 +8,12 @@ pub const Error = error{
     CyclicDependencyGraph,
 };
 
+allocator: std.mem.Allocator,
 tasks: std.ArrayList(*Task),
 graph: Graph,
-allocator: *std.mem.Allocator,
 
-pub fn init(a: *std.mem.Allocator) Flow {
-    return Flow{ .tasks = std.ArrayList(*Task).init(a.*), .graph = Graph.init(a.*), .allocator = a };
+pub fn init(a: std.mem.Allocator) Flow {
+    return .{ .allocator = a, .tasks = std.ArrayList(*Task).init(a), .graph = Graph.init(a) };
 }
 
 pub fn newTask(self: *Flow, comptime TaskType: type, init_outputs: anytype, func_ptr: anytype) !*TaskType {
