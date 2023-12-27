@@ -1,6 +1,7 @@
 const std = @import("std");
 const Task = @import("task.zig");
 const Graph = @import("zig-graph").DirectedGraph(*Task, std.hash_map.AutoContext(*Task));
+const Async = @import("zig-async");
 
 const Flow = @This();
 
@@ -37,11 +38,14 @@ pub fn execute(self: Flow) !void {
         return Error.CyclicDependencyGraph;
     }
 
+    const ExecTask = Async.Task(Task.execute);
     var bfsIter = try self.graph.bfsIterator();
     while (true) {
         if (bfsIter.next()) |task_iter| {
-            if (task_iter) |task| {
-                task.execute();
+            if (task_iter) |task_ptr| {
+                var future = try ExecTask.launch(self.allocator, .{task_ptr});
+                defer future.deinit();
+                future.wait();
             } else {
                 break;
             }
