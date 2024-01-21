@@ -62,7 +62,7 @@ test "cycle detection" {
         &.{ DummyStruct, DummyError },
     );
 
-    var flowgraph = try Flow.init(&allocator);
+    var flowgraph = try Flow.init(allocator);
     defer flowgraph.deinit();
 
     var task1 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "1", .depends_on = undefined, .value = undefined }, DummyError.Error1 }, &dummyTaskFunc);
@@ -96,7 +96,7 @@ test "integration test" {
         &.{ DummyStruct, DummyError },
     );
 
-    var flowgraph = try Flow.init(&allocator);
+    var flowgraph = try Flow.init(allocator);
     defer flowgraph.deinit();
 
     var task1 = try flowgraph.newTask(TestTaskType1, .{ 0, 0, 0 }, &dummyTaskFunc1);

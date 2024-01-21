@@ -10,14 +10,14 @@ pub const Error = error{
     CyclicDependencyGraph,
 };
 
-allocator: *std.mem.Allocator,
+allocator: std.mem.Allocator,
 tasks: std.ArrayList(*Task),
 graph: Graph,
 executor: ThreadPool,
 
-pub fn init(a: *std.mem.Allocator) !Flow {
+pub fn init(a: std.mem.Allocator) !Flow {
     const num_cpus: u32 = @truncate(std.Thread.getCpuCount() catch 8);
-    return .{ .allocator = a, .tasks = std.ArrayList(*Task).init(a.*), .graph = Graph.init(a.*), .executor = ThreadPool.init(.{ .max_threads = num_cpus }) };
+    return .{ .allocator = a, .tasks = std.ArrayList(*Task).init(a), .graph = Graph.init(a), .executor = ThreadPool.init(.{ .max_threads = num_cpus }) };
 }
 
 pub fn newTask(self: *Flow, comptime TaskType: type, init_outputs: anytype, func_ptr: anytype) !*TaskType {
@@ -104,7 +104,7 @@ pub fn execute(self: *Flow) !void {
         return Error.CyclicDependencyGraph;
     }
 
-    var flow_context = try FlowExecutionContext.init(self.allocator.*, self, self.tasks.items.len);
+    var flow_context = try FlowExecutionContext.init(self.allocator, self, self.tasks.items.len);
     defer flow_context.deinit();
 
     var initial_tp_batch = ThreadPool.Batch{};
