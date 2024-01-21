@@ -49,6 +49,11 @@ pub fn DirectedGraph(
         /// This is currently dictated by our usage of HashMap underneath.
         const Size = AdjMap.Size;
 
+        const EdgeCounts = struct {
+            fan_ins: Size,
+            fan_outs: Size,
+        };
+
         /// initialize a new directed graph. This is used if the Context type
         /// has no data (zero-sized).
         pub fn init(allocator: Allocator) Self {
@@ -245,6 +250,46 @@ pub fn DirectedGraph(
             }
 
             return count;
+        }
+
+        pub fn countInOutEdges(self: *const Self, vertex: T) EdgeCounts {
+            const vertex_hash = self.ctx.hash(vertex);
+            var result = EdgeCounts{ .fan_ins = 0, .fan_outs = 0 };
+            if (self.adjIn.getPtr(vertex_hash)) |fan_ins_map| {
+                result.fan_ins = fan_ins_map.count();
+            } else unreachable;
+            if (self.adjOut.getPtr(vertex_hash)) |fan_outs_map| {
+                result.fan_outs = fan_outs_map.count();
+            } else unreachable;
+            return result;
+        }
+
+        pub fn getFanIns(self: *const Self, to: T, allocator: Allocator) std.ArrayList(*T) {
+            const vertex_hash = self.ctx.hash(to);
+            if (self.adjIn.getPtr(vertex_hash)) |fan_ins_map| {
+                var fan_ins = std.ArrayList(*T).init(allocator);
+                var iter = fan_ins_map.keyIterator();
+                while (iter.next()) |fan_in_hash| {
+                    if (self.values.getPtr(fan_in_hash.*)) |fan_in| {
+                        fan_ins.append(fan_in) catch unreachable;
+                    } else unreachable;
+                }
+                return fan_ins;
+            } else unreachable;
+        }
+
+        pub fn getFanOuts(self: *const Self, from: T, allocator: Allocator) std.ArrayList(*T) {
+            const vertex_hash = self.ctx.hash(from);
+            if (self.adjOut.getPtr(vertex_hash)) |fan_outs_map| {
+                var fan_outs = std.ArrayList(*T).init(allocator);
+                var iter = fan_outs_map.keyIterator();
+                while (iter.next()) |fan_out_hash| {
+                    if (self.values.getPtr(fan_out_hash.*)) |fan_out| {
+                        fan_outs.append(fan_out) catch unreachable;
+                    } else unreachable;
+                }
+                return fan_outs;
+            } else unreachable;
         }
 
         /// Cycles returns the set of cycles (if any).

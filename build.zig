@@ -17,6 +17,8 @@ pub fn build(b: *std.Build) void {
 
     const zig_graph_module_name = "zig-graph";
     const zig_graph_module = b.addModule(zig_graph_module_name, .{ .source_file = .{ .path = "external_libs/zig-graph/src/graph.zig" } });
+    const zap_module_name = "zap";
+    const zap_module = b.addModule(zap_module_name, .{ .source_file = .{ .path = "external_libs/zap/src/thread_pool.zig" } });
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -44,6 +46,7 @@ pub fn build(b: *std.Build) void {
 
     for (build_steps.items) |step| {
         step.addModule(zig_graph_module_name, zig_graph_module);
+        step.addModule(zap_module_name, zap_module);
     }
 
     // This declares intent for the shared library to be installed into the
