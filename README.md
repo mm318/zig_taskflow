@@ -50,7 +50,8 @@ zig build
 
 To run tests:
 ```bash
-zig build test --summary all
+zig build -Doptimize=Debug test --summary all
+zig build -Doptimize=ReleaseFast test --summary all
 ```
 
 ### Develop

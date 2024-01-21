@@ -4,13 +4,13 @@ const inputs_field_name = "inputs";
 const outputs_field_name = "outputs";
 
 const Task = @This();
-executeInThreadPoolFn: *const fn (self: *void) void,
+id: usize,
 executeFn: *const fn (self: *Task) void,
 freeFn: *const fn (self: *Task, allocator: *std.mem.Allocator) void,
 
-// pub fn execute(self: *Task) void {
-//     self.executeFn(self);
-// }
+pub fn execute(self: *Task) void {
+    self.executeFn(self);
+}
 
 pub fn free(self: *Task, allocator: *std.mem.Allocator) void {
     self.freeFn(self, allocator);
@@ -142,13 +142,8 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
         interface: Task,
         internals: Internals,
 
-        pub fn new(a: *std.mem.Allocator, init_inputs: anytype, init_outputs: anytype, func_ptr: anytype) !*Self {
+        pub fn new(a: *std.mem.Allocator, id: usize, init_inputs: anytype, init_outputs: anytype, func_ptr: anytype) !*Self {
             const impl = struct {
-                pub fn executeInThreadPool(vptr: *void) void {
-                    const ptr: *Task = @ptrCast(@alignCast(vptr));
-                    const self = @fieldParentPtr(Self, "interface", ptr);
-                    self.execute();
-                }
                 pub fn execute(ptr: *Task) void {
                     const self = @fieldParentPtr(Self, "interface", ptr);
                     self.execute();
@@ -162,7 +157,7 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
             const result = try a.create(Self);
             errdefer a.destroy(result);
 
-            result.* = Self{ .interface = Task{ .executeInThreadPoolFn = impl.executeInThreadPool, .executeFn = impl.execute, .freeFn = impl.free }, .internals = Internals{ .inputs = init_inputs, .func = func_ptr, .outputs = init_outputs } };
+            result.* = Self{ .interface = Task{ .id = id, .executeFn = impl.execute, .freeFn = impl.free }, .internals = Internals{ .inputs = init_inputs, .func = func_ptr, .outputs = init_outputs } };
             return result;
         }
 

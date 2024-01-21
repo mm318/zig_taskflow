@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = @import("std").debug.assert;
 const Task = @import("task.zig");
 const Graph = @import("zig-graph").DirectedGraph(*Task, std.hash_map.AutoContext(*Task));
 const ThreadPool = @import("zap").ThreadPool;
@@ -20,7 +21,7 @@ pub fn init(a: *std.mem.Allocator) !Flow {
 }
 
 pub fn newTask(self: *Flow, comptime TaskType: type, init_outputs: anytype, func_ptr: anytype) !*TaskType {
-    const result = try TaskType.new(self.allocator, undefined, init_outputs, func_ptr);
+    const result = try TaskType.new(self.allocator, self.tasks.items.len, undefined, init_outputs, func_ptr);
     try self.tasks.append(&result.interface);
     try self.graph.add(&result.interface);
     return result;
@@ -32,6 +33,69 @@ pub fn connect(self: *Flow, src_task: anytype, comptime output_idx: usize, dst_t
     dst_task.setInput(input_idx, src_task, output_idx);
 }
 
+const TaskExecutionContext = struct {
+    tp_task: ThreadPool.Task,
+    flow_task: *Task,
+    is_completed: bool = false,
+    is_sink: bool = false,
+    parent_context: *FlowExecutionContext,
+
+    fn executeTaskInThreadPool(vptr: ?*void) void {
+        const self: *TaskExecutionContext = @ptrCast(@alignCast(vptr));
+        self.executeTask();
+    }
+
+    fn executeTask(self: *TaskExecutionContext) void {
+        self.flow_task.execute();
+        {
+            // have self.completed assignment take effect
+            self.parent_context.lock.lock();
+            defer self.parent_context.lock.unlock();
+            self.is_completed = true;
+        }
+
+        if (!self.is_sink) {
+            // check this task's fan-outs to see if the rest of their dependencies have also been completed
+            const fan_outs = self.parent_context.parent_context.graph.getFanOuts(self.flow_task, self.parent_context.allocator);
+            defer fan_outs.deinit();
+            for (fan_outs.items) |next_task| {
+                const next_tp_batch = ThreadPool.Batch.from(&self.parent_context.task_contexts.items[next_task.*.id].tp_task);
+                self.parent_context.parent_context.executor.schedule(next_tp_batch);
+            }
+        } else {
+            self.parent_context.signal.signal();
+        }
+    }
+};
+
+const FlowExecutionContext = struct {
+    allocator: std.mem.Allocator,
+    task_contexts: std.ArrayList(TaskExecutionContext),
+    sinks: std.ArrayList(usize),
+    parent_context: *Flow,
+    lock: std.Thread.Mutex = std.Thread.Mutex{},
+    signal: std.Thread.Condition = std.Thread.Condition{},
+
+    fn init(allocator: std.mem.Allocator, parent: *Flow, num_tasks: usize) !FlowExecutionContext {
+        return FlowExecutionContext{ .allocator = allocator, .task_contexts = try std.ArrayList(TaskExecutionContext).initCapacity(allocator, num_tasks), .sinks = std.ArrayList(usize).init(allocator), .parent_context = parent };
+    }
+
+    fn deinit(self: *FlowExecutionContext) void {
+        self.task_contexts.deinit();
+        self.sinks.deinit();
+    }
+
+    // self.lock has already been acquired when coming here from the Task::execute() while loop
+    fn hasCompleted(self: *const FlowExecutionContext) bool {
+        for (self.sinks.items) |sink_task_id| {
+            if (!self.task_contexts.items[sink_task_id].is_completed) {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+
 pub fn execute(self: *Flow) !void {
     var cycles = self.graph.cycles();
     if (cycles != null) {
@@ -40,32 +104,42 @@ pub fn execute(self: *Flow) !void {
         return Error.CyclicDependencyGraph;
     }
 
-    var tp_batch = ThreadPool.Batch{};
-    var tp_tasks = std.ArrayList(ThreadPool.Task).init(self.allocator.*);
-    defer tp_tasks.deinit();
+    var flow_context = try FlowExecutionContext.init(self.allocator.*, self, self.tasks.items.len);
+    defer flow_context.deinit();
 
-    var bfsIter = try self.graph.bfsIterator();
-    while (true) {
-        if (bfsIter.next()) |task_iter| {
-            if (task_iter) |task| {
-                try tp_tasks.append(ThreadPool.Task{ .callback = task.executeInThreadPoolFn, .cookie = @ptrCast(task) });
-            } else {
-                break;
-            }
-        } else |err| {
-            std.log.err("error occurred while executing: {}", .{err});
-            break;
+    var initial_tp_batch = ThreadPool.Batch{};
+    for (self.tasks.items) |task| {
+        assert(flow_context.task_contexts.items.len == task.id);
+        const task_context = TaskExecutionContext{ .tp_task = ThreadPool.Task{ .callback = TaskExecutionContext.executeTaskInThreadPool, .cookie = null }, .flow_task = task, .parent_context = &flow_context };
+        try flow_context.task_contexts.append(task_context);
+        // flow_context.task_contexts has been preallocated so the append should not change address of flow_context.task_contexts[*]
+        flow_context.task_contexts.items[task.id].tp_task.cookie = @ptrCast(&flow_context.task_contexts.items[task.id]);
+
+        // check if this task is a root task that needs to be initially scheduled
+        const edge_count = self.graph.countInOutEdges(task);
+        if (edge_count.fan_ins <= 0) {
+            std.debug.print("\ntask {} is source\n", .{task.id});
+            initial_tp_batch.push(ThreadPool.Batch.from(&flow_context.task_contexts.items[task.id].tp_task));
+        }
+        if (edge_count.fan_outs <= 0) {
+            std.debug.print("\ntask {} is sink\n", .{task.id});
+            flow_context.task_contexts.items[task.id].is_sink = true;
+            try flow_context.sinks.append(task.id);
         }
     }
-    bfsIter.deinit();
 
-    for (tp_tasks.items) |*tp_task| {
-        tp_batch.push(ThreadPool.Batch.from(tp_task));
+    // start execution
+    flow_context.lock.lock();
+    defer flow_context.lock.unlock();
+
+    self.executor.schedule(initial_tp_batch);
+
+    while (!flow_context.hasCompleted()) {
+        flow_context.signal.wait(&flow_context.lock);
     }
-    self.executor.schedule(tp_batch);
 }
 
-pub fn free(self: *Flow) void {
+pub fn deinit(self: *Flow) void {
     for (self.tasks.items) |task| {
         task.free(self.allocator);
     }
