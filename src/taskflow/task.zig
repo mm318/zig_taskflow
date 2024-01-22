@@ -5,8 +5,20 @@ const outputs_field_name = "outputs";
 
 const Task = @This();
 id: usize,
+
+//
+// function pointers in vtable, they should point to a function that downcasts Task to a ConcreteTask
+//
+checkAllInputsSetFn: *const fn (self: *Task) bool,
 executeFn: *const fn (self: *Task) void,
 freeFn: *const fn (self: *Task, allocator: std.mem.Allocator) void,
+
+//
+// interface functions
+//
+pub fn checkAllInputsSet(self: *Task) bool {
+    return self.checkAllInputsSetFn(self);
+}
 
 pub fn execute(self: *Task) void {
     self.executeFn(self);
@@ -18,7 +30,7 @@ pub fn free(self: *Task, allocator: std.mem.Allocator) void {
 
 fn createTaskInternalsType(comptime input_types: []const type, comptime output_types: []const type) type {
     var input_pointer_types: [input_types.len]type = undefined;
-    for (0.., input_types) |i, t| {
+    inline for (0.., input_types) |i, t| {
         input_pointer_types[i] = @Type(.{ .Pointer = .{
             .size = std.builtin.Type.Pointer.Size.One,
             .is_const = true,
@@ -34,7 +46,7 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
     var input_fields: [input_types.len]std.builtin.Type.StructField = undefined;
     var optional_input_fields: [input_types.len]std.builtin.Type.StructField = undefined;
     var input_params: [input_types.len]std.builtin.Type.Fn.Param = undefined;
-    for (0.., input_pointer_types) |i, t| {
+    inline for (0.., input_pointer_types) |i, t| {
         const field_name: []const u8 = std.fmt.comptimePrint("{}", .{i});
         input_fields[i] = .{
             .name = field_name,
@@ -61,7 +73,7 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
     }
 
     var output_fields: [output_types.len]std.builtin.Type.StructField = undefined;
-    for (0.., output_types) |i, t| {
+    inline for (0.., output_types) |i, t| {
         const field_name: []const u8 = std.fmt.comptimePrint("{}", .{i});
         output_fields[i] = .{
             .name = field_name,
@@ -78,10 +90,14 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
         .decls = &[_]std.builtin.Type.Declaration{},
         .is_tuple = true,
     } });
+    var default_input: input_type = undefined;
+    inline for (0..input_types.len) |i| {
+        default_input[i] = null;
+    }
     const input_field: std.builtin.Type.StructField = .{
         .name = inputs_field_name,
         .type = input_type,
-        .default_value = null,
+        .default_value = &default_input,
         .is_comptime = false,
         .alignment = 0,
     };
@@ -138,30 +154,19 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
     const Internals = createTaskInternalsType(input_types, output_types);
 
     const ConcreteTask = struct {
-        const Self = @This();
+        const TaskImpl = @This();
         interface: Task,
         internals: Internals,
 
-        pub fn new(a: std.mem.Allocator, id: usize, init_inputs: anytype, init_outputs: anytype, func_ptr: anytype) !*Self {
-            const impl = struct {
-                pub fn execute(ptr: *Task) void {
-                    const self = @fieldParentPtr(Self, "interface", ptr);
-                    self.execute();
-                }
-                pub fn free(ptr: *Task, allocator: std.mem.Allocator) void {
-                    const self = @fieldParentPtr(Self, "interface", ptr);
-                    self.free(allocator);
-                }
-            };
-
-            const result = try a.create(Self);
+        pub fn new(a: std.mem.Allocator, id: usize, init_outputs: anytype, func_ptr: anytype) !*TaskImpl {
+            const result = try a.create(TaskImpl);
             errdefer a.destroy(result);
 
-            result.* = Self{ .interface = Task{ .id = id, .executeFn = impl.execute, .freeFn = impl.free }, .internals = Internals{ .inputs = init_inputs, .func = func_ptr, .outputs = init_outputs } };
+            result.* = TaskImpl{ .interface = Task{ .id = id, .checkAllInputsSetFn = TaskImpl._checkAllInputsSet, .executeFn = TaskImpl._execute, .freeFn = TaskImpl._free }, .internals = Internals{ .func = func_ptr, .outputs = init_outputs } };
             return result;
         }
 
-        pub fn setInput(self: *Self, comptime input_idx: usize, source: anytype, comptime output_idx: usize) void {
+        pub fn setInput(self: *TaskImpl, comptime input_idx: usize, source: anytype, comptime output_idx: usize) void {
             const src_outputs = @field(source.internals, outputs_field_name);
             const src_output_field = @typeInfo(@TypeOf(src_outputs)).Struct.fields[output_idx];
             const src_output_field_offset = @offsetOf(@TypeOf(source.internals), outputs_field_name) + @offsetOf(@TypeOf(src_outputs), src_output_field.name);
@@ -175,7 +180,26 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
             dst_ptr.* = src_ptr;
         }
 
-        pub fn execute(self: *Self) void {
+        // note: when producing a pointer with respect to self, self must be passed by pointer
+        pub fn getOutputPtr(self: *const TaskImpl, comptime output_idx: usize) *const output_types[output_idx] {
+            return &(self.internals.outputs[output_idx]);
+        }
+
+        fn checkAllInputsSet(self: *const TaskImpl) bool {
+            inline for (0..input_types.len) |i| {
+                if (self.internals.inputs[i] == null) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        fn _checkAllInputsSet(ptr: *Task) bool {
+            const self = @fieldParentPtr(TaskImpl, "interface", ptr);
+            return self.checkAllInputsSet();
+        }
+
+        fn execute(self: *TaskImpl) void {
             const Args = std.meta.ArgsTuple(@typeInfo(@TypeOf(self.internals.func)).Pointer.child);
             var args: Args = undefined;
             inline for (0.., std.meta.fields(Args)) |i, _| {
@@ -184,13 +208,18 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
             self.internals.outputs = @call(std.builtin.CallModifier.auto, self.internals.func, args);
         }
 
-        // note: when producing a pointer with respect to self, self must be passed by pointer
-        pub fn getOutputPtr(self: *const Self, comptime output_idx: usize) *const output_types[output_idx] {
-            return &(self.internals.outputs[output_idx]);
+        fn _execute(ptr: *Task) void {
+            const self = @fieldParentPtr(TaskImpl, "interface", ptr);
+            self.execute();
         }
 
-        pub fn free(self: *Self, a: std.mem.Allocator) void {
+        fn free(self: *TaskImpl, a: std.mem.Allocator) void {
             a.destroy(self);
+        }
+
+        fn _free(ptr: *Task, allocator: std.mem.Allocator) void {
+            const self = @fieldParentPtr(TaskImpl, "interface", ptr);
+            self.free(allocator);
         }
     };
 

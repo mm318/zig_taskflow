@@ -18,7 +18,7 @@ fn dummyTaskFunc(input1: *const DummyStruct, input2: *const DummyError) struct {
     return .{ input1.*, input2.* };
 }
 
-fn dummyTaskFunc1(_: *const i32, _: *const u32, _: *const usize) struct { u8, f16, f32 } {
+fn dummyTaskFunc1() struct { u8, f16, f32 } {
     return .{ 7, -1.234, -5.678 };
 }
 
@@ -28,7 +28,7 @@ fn dummyTaskFunc2(input1: *const u8, input2: *const f32, input3: *const f16) str
 }
 
 fn printTaskInfo(task: anytype, task_name: []const u8, header: []const u8) void {
-    std.debug.print("\nDebug {s} {s}:\n", .{ task_name, header });
+    std.debug.print("Debug {s} {s}:\n", .{ task_name, header });
     inline for (0.., @typeInfo(@TypeOf(task.internals)).Struct.fields) |i, task_field| {
         _ = i;
         if (@typeInfo(task_field.type) == .Struct) {
@@ -50,6 +50,14 @@ fn printTaskInfo(task: anytype, task_name: []const u8, header: []const u8) void 
 }
 
 test "cycle detection" {
+    std.debug.print(
+        \\
+        \\#####################################################################
+        \\#####  Beginning "cycle detection" test
+        \\#####################################################################
+        \\
+    , .{});
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();
     defer {
@@ -77,9 +85,69 @@ test "cycle detection" {
     try flowgraph.connect(task3, 1, task1, 1); // this creates a cycle
 
     try std.testing.expectError(Flow.Error.CyclicDependencyGraph, flowgraph.execute());
+
+    std.debug.print(
+        \\
+        \\#####################################################################
+        \\#####  Finished "cycle detection" test
+        \\#####################################################################
+        \\
+    , .{});
+}
+
+test "incomplete inputs detection" {
+    std.debug.print(
+        \\
+        \\#####################################################################
+        \\#####  Beginning "incomplete inputs detection" test
+        \\#####################################################################
+        \\
+    , .{});
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var allocator = gpa.allocator();
+    defer {
+        const deinit_status = gpa.deinit();
+        std.debug.assert(deinit_status != .leak);
+    }
+
+    const TestTaskType = Task.createTaskType(
+        &.{ DummyStruct, DummyError },
+        &.{ DummyStruct, DummyError },
+    );
+
+    var flowgraph = try Flow.init(allocator);
+    defer flowgraph.deinit();
+
+    var task1 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "1", .depends_on = undefined, .value = undefined }, DummyError.Error1 }, &dummyTaskFunc);
+    var task2 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "2", .depends_on = undefined, .value = undefined }, DummyError.Error2 }, &dummyTaskFunc);
+    var task3 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "3", .depends_on = undefined, .value = undefined }, DummyError.Error3 }, &dummyTaskFunc);
+
+    try flowgraph.connect(task1, 0, task2, 0);
+    // try flowgraph.connect(task1, 1, task2, 1);  // task 2 does not have all of its inputs set
+    try flowgraph.connect(task2, 0, task3, 0);
+    // try flowgraph.connect(task2, 1, task3, 1);  // task 3 does not have all of its inputs set
+
+    try std.testing.expectError(Flow.Error.DisconnectedInput, flowgraph.execute());
+
+    std.debug.print(
+        \\
+        \\#####################################################################
+        \\#####  Finished "incomplete inputs detection" test
+        \\#####################################################################
+        \\
+    , .{});
 }
 
 test "integration test" {
+    std.debug.print(
+        \\
+        \\#####################################################################
+        \\#####  Beginning "integration" test
+        \\#####################################################################
+        \\
+    , .{});
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();
     defer {
@@ -88,7 +156,7 @@ test "integration test" {
     }
 
     const TestTaskType1 = Task.createTaskType(
-        &.{ i32, u32, usize },
+        &.{},
         &.{ u8, f16, f32 },
     );
     const TestTaskType2 = Task.createTaskType(
@@ -101,6 +169,7 @@ test "integration test" {
 
     var task1 = try flowgraph.newTask(TestTaskType1, .{ 0, 0, 0 }, &dummyTaskFunc1);
     var task2 = try flowgraph.newTask(TestTaskType2, .{ DummyStruct{ .name = "none", .depends_on = undefined, .value = undefined }, DummyError.Error3 }, &dummyTaskFunc2);
+    std.debug.print("\n", .{});
     printTaskInfo(task1, "task1", "post-createTaskType()");
     printTaskInfo(task2, "task2", "post-createTaskType()");
 
@@ -117,4 +186,12 @@ test "integration test" {
     try std.testing.expectApproxEqRel(@as(f32, -5.67799997), task1.getOutputPtr(2).*, 0.0001);
     try std.testing.expectEqualStrings("dummy1", task2.getOutputPtr(0).*.name);
     try std.testing.expectApproxEqRel(@as(f32, 8.76250267e-02), task2.getOutputPtr(0).value, 0.0001);
+
+    std.debug.print(
+        \\
+        \\#####################################################################
+        \\#####  Finished "integration" test
+        \\#####################################################################
+        \\
+    , .{});
 }

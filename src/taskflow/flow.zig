@@ -8,6 +8,7 @@ const Flow = @This();
 
 pub const Error = error{
     CyclicDependencyGraph,
+    DisconnectedInput,
 };
 
 allocator: std.mem.Allocator,
@@ -21,7 +22,7 @@ pub fn init(a: std.mem.Allocator) !Flow {
 }
 
 pub fn newTask(self: *Flow, comptime TaskType: type, init_outputs: anytype, func_ptr: anytype) !*TaskType {
-    const result = try TaskType.new(self.allocator, self.tasks.items.len, undefined, init_outputs, func_ptr);
+    const result = try TaskType.new(self.allocator, self.tasks.items.len, init_outputs, func_ptr);
     try self.tasks.append(&result.interface);
     try self.graph.add(&result.interface);
     return result;
@@ -107,6 +108,7 @@ pub fn execute(self: *Flow) !void {
     var flow_context = try FlowExecutionContext.init(self.allocator, self, self.tasks.items.len);
     defer flow_context.deinit();
 
+    std.debug.print("\n", .{});
     var initial_tp_batch = ThreadPool.Batch{};
     for (self.tasks.items) |task| {
         assert(flow_context.task_contexts.items.len == task.id);
@@ -118,15 +120,21 @@ pub fn execute(self: *Flow) !void {
         // check if this task is a root task that needs to be initially scheduled
         const edge_count = self.graph.countInOutEdges(task);
         if (edge_count.fan_ins <= 0) {
-            std.debug.print("\ntask {} is source\n", .{task.id});
+            std.debug.print("task {} is source\n", .{task.id});
             initial_tp_batch.push(ThreadPool.Batch.from(&flow_context.task_contexts.items[task.id].tp_task));
+        } else {
+            if (!task.checkAllInputsSet()) {
+                std.debug.print("task {} does not have all inputs connected\n", .{task.id});
+                return Error.DisconnectedInput;
+            }
         }
         if (edge_count.fan_outs <= 0) {
-            std.debug.print("\ntask {} is sink\n", .{task.id});
+            std.debug.print("task {} is sink\n", .{task.id});
             flow_context.task_contexts.items[task.id].is_sink = true;
             try flow_context.sinks.append(task.id);
         }
     }
+    std.debug.print("\n", .{});
 
     // start execution
     flow_context.lock.lock();
