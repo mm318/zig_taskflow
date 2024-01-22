@@ -1,10 +1,9 @@
 const std = @import("std");
-const assert = @import("std").debug.assert;
-const Task = @import("task.zig");
 const Graph = @import("zig-graph").DirectedGraph(*Task, std.hash_map.AutoContext(*Task));
 const ThreadPool = @import("zap").ThreadPool;
 
-const Flow = @This();
+pub const Flow = @This();
+pub const Task = @import("task.zig");
 
 pub const Error = error{
     CyclicDependencyGraph,
@@ -35,9 +34,16 @@ pub fn connect(self: *Flow, src_task: anytype, comptime output_idx: usize, dst_t
 }
 
 const TaskExecutionContext = struct {
+    const State = enum(u8) {
+        IDLE = 0,
+        SCHEDULED,
+        FINISHED,
+    };
+
     tp_task: ThreadPool.Task,
     flow_task: *Task,
-    is_completed: bool = false,
+    state: std.atomic.Atomic(State) = std.atomic.Atomic(State).init(.IDLE),
+    lock: std.Thread.Mutex = std.Thread.Mutex{},
     is_sink: bool = false,
     parent_context: *FlowExecutionContext,
 
@@ -47,21 +53,41 @@ const TaskExecutionContext = struct {
     }
 
     fn executeTask(self: *TaskExecutionContext) void {
+        // std.debug.print("starting executing task {}\n", .{self.flow_task.id});
         self.flow_task.execute();
-        {
-            // have self.completed assignment take effect
-            self.parent_context.lock.lock();
-            defer self.parent_context.lock.unlock();
-            self.is_completed = true;
-        }
+        // std.debug.print("finished executing task {}\n", .{self.flow_task.id});
+        self.state.store(.FINISHED, .Monotonic);
 
         if (!self.is_sink) {
             // check this task's fan-outs to see if the rest of their dependencies have also been completed
             const fan_outs = self.parent_context.parent_context.graph.getFanOuts(self.flow_task, self.parent_context.allocator);
             defer fan_outs.deinit();
             for (fan_outs.items) |next_task| {
-                const next_tp_batch = ThreadPool.Batch.from(&self.parent_context.task_contexts.items[next_task.*.id].tp_task);
-                self.parent_context.parent_context.executor.schedule(next_tp_batch);
+                const next_task_context = &self.parent_context.task_contexts.items[next_task.*.id];
+                // std.debug.print("next task id: {} state: {}\n", .{next_task.*.id, next_task_context.state.load(.Monotonic)});
+                if (next_task_context.state.load(.Monotonic) == .IDLE) {
+                    const fan_ins = self.parent_context.parent_context.graph.getFanIns(next_task.*, self.parent_context.allocator);
+                    defer fan_ins.deinit();
+
+                    next_task_context.lock.lock();
+                    defer next_task_context.lock.unlock();
+
+                    var deps_met = true;
+                    for (fan_ins.items) |prev_task| {
+                        const prev_task_context = &self.parent_context.task_contexts.items[prev_task.*.id];
+                        if (prev_task_context.state.load(.Monotonic) != .FINISHED) {
+                            // std.debug.print("not starting task {} because task {} has not finished\n", .{next_task.*.id, prev_task.*.id});
+                            deps_met = false;
+                            break;
+                        }
+                    }
+
+                    if (deps_met and next_task_context.state.load(.Monotonic) == .IDLE) {
+                        const next_tp_batch = ThreadPool.Batch.from(&next_task_context.tp_task);
+                        self.parent_context.parent_context.executor.schedule(next_tp_batch);
+                        next_task_context.state.store(.SCHEDULED, .Monotonic);
+                    }
+                }
             }
         } else {
             self.parent_context.signal.signal();
@@ -89,7 +115,7 @@ const FlowExecutionContext = struct {
     // self.lock has already been acquired when coming here from the Task::execute() while loop
     fn hasCompleted(self: *const FlowExecutionContext) bool {
         for (self.sinks.items) |sink_task_id| {
-            if (!self.task_contexts.items[sink_task_id].is_completed) {
+            if (self.task_contexts.items[sink_task_id].state.load(.Monotonic) != .FINISHED) {
                 return false;
             }
         }
@@ -111,7 +137,7 @@ pub fn execute(self: *Flow) !void {
     std.debug.print("\n", .{});
     var initial_tp_batch = ThreadPool.Batch{};
     for (self.tasks.items) |task| {
-        assert(flow_context.task_contexts.items.len == task.id);
+        std.debug.assert(flow_context.task_contexts.items.len == task.id);
         const task_context = TaskExecutionContext{ .tp_task = ThreadPool.Task{ .callback = TaskExecutionContext.executeTaskInThreadPool, .cookie = null }, .flow_task = task, .parent_context = &flow_context };
         try flow_context.task_contexts.append(task_context);
         // flow_context.task_contexts has been preallocated so the append should not change address of flow_context.task_contexts[*]
@@ -122,6 +148,7 @@ pub fn execute(self: *Flow) !void {
         if (edge_count.fan_ins <= 0) {
             std.debug.print("task {} is source\n", .{task.id});
             initial_tp_batch.push(ThreadPool.Batch.from(&flow_context.task_contexts.items[task.id].tp_task));
+            flow_context.task_contexts.items[task.id].state.store(.SCHEDULED, .Monotonic);
         } else {
             if (!task.checkAllInputsSet()) {
                 std.debug.print("task {} does not have all inputs connected\n", .{task.id});

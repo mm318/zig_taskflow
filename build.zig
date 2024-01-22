@@ -20,39 +20,33 @@ pub fn build(b: *std.Build) void {
     const zap_module_name = "zap";
     const zap_module = b.addModule(zap_module_name, .{ .source_file = .{ .path = "external_libs/zap/src/thread_pool.zig" } });
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-    var build_steps: std.ArrayList(*std.Build.Step.Compile) = std.ArrayList(*std.Build.Step.Compile).init(allocator);
+    const dependencies = [_]std.Build.ModuleDependency{ .{ .name = zig_graph_module_name, .module = zig_graph_module }, .{ .name = zap_module_name, .module = zap_module } };
+    const taskflow_module_name = "taskflow";
+    const taskflow_module = b.addModule(taskflow_module_name, .{ .source_file = .{ .path = "src/taskflow/flow.zig" }, .dependencies = &dependencies });
 
+    // Creates a step for building a shared library
     const build_lib_step = b.addSharedLibrary(.{
         .name = "taskflow",
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
-        .root_source_file = .{ .path = "src/taskflow/flow.zig" },
+        .root_source_file = .{ .path = "src/lib.zig" },
         .target = target,
         .optimize = optimize,
     });
-    build_steps.append(build_lib_step) catch unreachable;
-
-    // Creates a step for unit testing. This only builds the test executable
-    // but does not run it.
-    const build_unit_test_step = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    build_steps.append(build_unit_test_step) catch unreachable;
-
-    for (build_steps.items) |step| {
-        step.addModule(zig_graph_module_name, zig_graph_module);
-        step.addModule(zap_module_name, zap_module);
-    }
+    build_lib_step.addModule(taskflow_module_name, taskflow_module);
 
     // This declares intent for the shared library to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
     _ = b.installArtifact(build_lib_step);
+
+    // Creates a step for unit testing. This only builds the test executable
+    // but does not run it.
+    const build_unit_test_step = b.addTest(.{
+        .root_source_file = .{ .path = "tests/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    build_unit_test_step.addModule(taskflow_module_name, taskflow_module);
+
     const run_unit_tests = b.addRunArtifact(build_unit_test_step);
 
     // Similar to creating the run step earlier, this exposes a `test` step to
