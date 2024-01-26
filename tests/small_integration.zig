@@ -44,12 +44,7 @@ test "small integration test" {
         \\
     , .{});
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
-    defer {
-        const deinit_status = gpa.deinit();
-        std.testing.expect(deinit_status != .leak) catch unreachable;
-    }
+    var allocator = std.testing.allocator;
 
     const TestTaskType1 = Task.createTaskType(
         &.{},

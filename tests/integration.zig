@@ -19,7 +19,7 @@ const IntegrationTest = @import("small_integration.zig");
 //                   K
 //
 
-var global_allocator: ?*std.mem.Allocator = null;
+var scratch_allocator: ?*const std.mem.Allocator = null;
 
 const Data = struct {
     x: []const u8,
@@ -41,7 +41,7 @@ fn func_b() struct { []const u8 } {
 const TaskC = Task.createTaskType(&.{i64}, &.{ bool, ?*const u8 });
 
 fn func_c(x: *const i64) struct { bool, ?*const u8 } {
-    var result2 = global_allocator.?.create(u8) catch unreachable;
+    var result2 = scratch_allocator.?.create(u8) catch unreachable;
     result2.* = @truncate(@as(u64, @bitCast(x.*)));
     return .{ @mod(x.*, 2) == 1, result2 };
 }
@@ -49,7 +49,7 @@ fn func_c(x: *const i64) struct { bool, ?*const u8 } {
 const TaskD = Task.createTaskType(&.{i64}, &.{ ?*const bool, Data });
 
 fn func_d(x: *const i64) struct { ?*const bool, Data } {
-    var result1 = global_allocator.?.create(bool) catch unreachable;
+    var result1 = scratch_allocator.?.create(bool) catch unreachable;
     result1.* = @mod(x.*, 2) == 0;
     return .{ result1, Data{ .x = "From Task D", .y = std.atomic.Atomic(usize).init(@as(usize, @bitCast(x.*))) } };
 }
@@ -57,7 +57,7 @@ fn func_d(x: *const i64) struct { ?*const bool, Data } {
 const TaskE = Task.createTaskType(&.{[]const u8}, &.{std.ArrayList(u8)});
 
 fn func_e(x: *const []const u8) struct { std.ArrayList(u8) } {
-    var result = std.ArrayList(u8).init(global_allocator.?.*);
+    var result = std.ArrayList(u8).init(scratch_allocator.?.*);
     result.writer().print("{s}\nFrom Task E", .{x.*}) catch unreachable;
     return .{result};
 }
@@ -65,8 +65,6 @@ fn func_e(x: *const []const u8) struct { std.ArrayList(u8) } {
 const TaskF = Task.createTaskType(&.{ ?*const u8, ?*const bool }, &.{u32});
 
 fn func_f(x: *const ?*const u8, y: *const ?*const bool) struct { u32 } {
-    defer global_allocator.?.destroy(x.*.?);
-    defer global_allocator.?.destroy(y.*.?);
     const result = if (y.*.?.*)
         x.*.?.* ^ 0b00000000
     else
@@ -77,7 +75,6 @@ fn func_f(x: *const ?*const u8, y: *const ?*const bool) struct { u32 } {
 const TaskG = Task.createTaskType(&.{ Data, std.ArrayList(u8) }, &.{ u32, bool });
 
 fn func_g(x: *const Data, y: *const std.ArrayList(u8)) struct { u32, bool } {
-    defer y.deinit();
     var hasher = std.hash.Wyhash.init(0);
     std.hash.autoHashStrat(&hasher, x.x, std.hash.Strategy.Deep);
     std.hash.autoHashStrat(&hasher, y.items, std.hash.Strategy.Deep);
@@ -87,7 +84,7 @@ fn func_g(x: *const Data, y: *const std.ArrayList(u8)) struct { u32, bool } {
 const TaskH = Task.createTaskType(&.{ bool, u32 }, &.{ Data, std.ArrayList(bool) });
 
 fn func_h(x: *const bool, y: *const u32) struct { Data, std.ArrayList(bool) } {
-    var result2 = std.ArrayList(bool).initCapacity(global_allocator.?.*, 15) catch unreachable;
+    var result2 = std.ArrayList(bool).initCapacity(scratch_allocator.?.*, 15) catch unreachable;
     for (0..result2.capacity) |_| {
         result2.append(x.*) catch unreachable;
     }
@@ -123,8 +120,7 @@ fn func_j(x: *const bool, y: *const u32) struct { [10]i8 } {
 const TaskK = Task.createTaskType(&.{ [10]i8, [5]u16, std.ArrayList(bool), Data }, &.{std.ArrayList(u8)});
 
 fn func_k(w: *const [10]i8, x: *const [5]u16, y: *const std.ArrayList(bool), z: *const Data) struct { std.ArrayList(u8) } {
-    defer y.deinit();
-    var result = std.ArrayList(u8).init(global_allocator.?.*);
+    var result = std.ArrayList(u8).init(scratch_allocator.?.*);
     result.writer().print("Task K result: {any} {any} {any} {any} {}", .{ w.*, x.*, y.items, z.x, z.y }) catch unreachable;
     return .{result};
 }
@@ -138,13 +134,7 @@ test "integration test" {
         \\
     , .{});
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
-    global_allocator = &allocator;
-    defer {
-        const deinit_status = gpa.deinit();
-        std.testing.expect(deinit_status != .leak) catch unreachable;
-    }
+    var allocator = std.testing.allocator;
 
     var flowgraph = try Flow.init(allocator);
     defer flowgraph.deinit();
@@ -179,7 +169,13 @@ test "integration test" {
     try flowgraph.connect(task_i, 0, task_k, 1);
     try flowgraph.connect(task_j, 0, task_k, 0);
 
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
+    scratch_allocator = &arena_allocator;
+
     try flowgraph.execute();
+
     IntegrationTest.printTaskInfo(task_a, "task_a", "post-execute()");
     IntegrationTest.printTaskInfo(task_b, "task_b", "post-execute()");
     IntegrationTest.printTaskInfo(task_c, "task_c", "post-execute()");
@@ -187,13 +183,12 @@ test "integration test" {
     IntegrationTest.printTaskInfo(task_e, "task_e", "post-execute()");
     IntegrationTest.printTaskInfo(task_f, "task_f", "post-execute()");
     IntegrationTest.printTaskInfo(task_g, "task_g", "post-execute()");
-    // IntegrationTest.printTaskInfo(task_h, "task_h", "post-execute()");
+    IntegrationTest.printTaskInfo(task_h, "task_h", "post-execute()");
     IntegrationTest.printTaskInfo(task_i, "task_i", "post-execute()");
     IntegrationTest.printTaskInfo(task_j, "task_j", "post-execute()");
-    // IntegrationTest.printTaskInfo(task_k, "task_k", "post-execute()");
+    IntegrationTest.printTaskInfo(task_k, "task_k", "post-execute()");
 
     std.debug.print("\n\nFinal output:\n{s}\n", .{task_k.getOutputPtr(0).items});
-    defer task_k.getOutputPtr(0).deinit();
 
     std.debug.print(
         \\

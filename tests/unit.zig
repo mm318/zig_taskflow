@@ -27,12 +27,7 @@ test "cycle detection" {
         \\
     , .{});
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
-    defer {
-        const deinit_status = gpa.deinit();
-        std.debug.assert(deinit_status != .leak);
-    }
+    var allocator = std.testing.allocator;
 
     const TestTaskType = Task.createTaskType(
         &.{ DummyStruct, DummyError },
@@ -73,12 +68,7 @@ test "incomplete inputs detection" {
         \\
     , .{});
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
-    defer {
-        const deinit_status = gpa.deinit();
-        std.debug.assert(deinit_status != .leak);
-    }
+    var allocator = std.testing.allocator;
 
     const TestTaskType = Task.createTaskType(
         &.{ DummyStruct, DummyError },

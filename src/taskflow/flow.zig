@@ -69,9 +69,6 @@ const TaskExecutionContext = struct {
                     const fan_ins = self.parent_context.parent_context.graph.getFanIns(next_task.*, self.parent_context.allocator);
                     defer fan_ins.deinit();
 
-                    next_task_context.lock.lock();
-                    defer next_task_context.lock.unlock();
-
                     var deps_met = true;
                     for (fan_ins.items) |prev_task| {
                         const prev_task_context = &self.parent_context.task_contexts.items[prev_task.*.id];
@@ -81,8 +78,13 @@ const TaskExecutionContext = struct {
                             break;
                         }
                     }
+                    if (!deps_met) {
+                        continue;
+                    }
 
-                    if (deps_met and next_task_context.state.load(.Monotonic) == .IDLE) {
+                    next_task_context.lock.lock();
+                    defer next_task_context.lock.unlock();
+                    if (next_task_context.state.load(.Monotonic) == .IDLE) {
                         const next_tp_batch = ThreadPool.Batch.from(&next_task_context.tp_task);
                         self.parent_context.parent_context.executor.schedule(next_tp_batch);
                         next_task_context.state.store(.SCHEDULED, .Monotonic);
