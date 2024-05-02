@@ -16,13 +16,20 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const zig_graph_module_name = "zig-graph";
-    const zig_graph_module = b.addModule(zig_graph_module_name, .{ .source_file = .{ .path = "external_libs/zig-graph/src/graph.zig" } });
+    const zig_graph_module = b.createModule(.{
+        .root_source_file = .{ .path = "external_libs/zig-graph/src/graph.zig" },
+    });
     const zap_module_name = "zap";
-    const zap_module = b.addModule(zap_module_name, .{ .source_file = .{ .path = "external_libs/zap/src/thread_pool.zig" } });
+    const zap_module = b.createModule(.{
+        .root_source_file = .{ .path = "external_libs/zap/src/thread_pool.zig" },
+    });
 
-    const dependencies = [_]std.Build.ModuleDependency{ .{ .name = zig_graph_module_name, .module = zig_graph_module }, .{ .name = zap_module_name, .module = zap_module } };
     const taskflow_module_name = "taskflow";
-    const taskflow_module = b.addModule(taskflow_module_name, .{ .source_file = .{ .path = "src/taskflow/flow.zig" }, .dependencies = &dependencies });
+    const taskflow_module = b.createModule(.{
+        .root_source_file = .{ .path = "src/taskflow/flow.zig" },
+    });
+    taskflow_module.addImport(zig_graph_module_name, zig_graph_module);
+    taskflow_module.addImport(zap_module_name, zap_module);
 
     // Creates a step for building a shared library
     const build_lib_step = b.addSharedLibrary(.{
@@ -31,12 +38,12 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    build_lib_step.addModule(taskflow_module_name, taskflow_module);
+    build_lib_step.root_module.addImport(taskflow_module_name, taskflow_module);
 
     // This declares intent for the shared library to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
-    _ = b.installArtifact(build_lib_step);
+    b.installArtifact(build_lib_step);
 
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
@@ -45,7 +52,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    build_unit_test_step.addModule(taskflow_module_name, taskflow_module);
+    build_unit_test_step.root_module.addImport(taskflow_module_name, taskflow_module);
 
     const run_unit_tests = b.addRunArtifact(build_unit_test_step);
 

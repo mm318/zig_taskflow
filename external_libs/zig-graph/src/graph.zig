@@ -338,8 +338,8 @@ pub fn DirectedGraph(
 
             // We could pre-allocate some space here and assume we'll visit
             // the full graph or something. Keeping it simple for now.
-            var stack = std.ArrayList(u64).init(self.allocator);
-            var visited = std.AutoHashMap(u64, void).init(self.allocator);
+            const stack = std.ArrayList(u64).init(self.allocator);
+            const visited = std.AutoHashMap(u64, void).init(self.allocator);
 
             return DFSIterator{
                 .g = self,
@@ -406,7 +406,7 @@ pub fn DirectedGraph(
             // We could pre-allocate some space here and assume we'll visit
             // the full graph or something. Keeping it simple for now.
             var queue = std.ArrayList(u64).init(self.allocator);
-            var visited = std.AutoHashMap(u64, void).init(self.allocator);
+            const visited = std.AutoHashMap(u64, void).init(self.allocator);
 
             var it = self.adjIn.iterator();
             while (it.next()) |source_kv| {

@@ -47,7 +47,7 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
     var optional_input_fields: [input_types.len]std.builtin.Type.StructField = undefined;
     var input_params: [input_types.len]std.builtin.Type.Fn.Param = undefined;
     inline for (0.., input_pointer_types) |i, t| {
-        const field_name: []const u8 = std.fmt.comptimePrint("{}", .{i});
+        const field_name = std.fmt.comptimePrint("{}", .{i});
         input_fields[i] = .{
             .name = field_name,
             .type = t,
@@ -74,7 +74,7 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
 
     var output_fields: [output_types.len]std.builtin.Type.StructField = undefined;
     inline for (0.., output_types) |i, t| {
-        const field_name: []const u8 = std.fmt.comptimePrint("{}", .{i});
+        const field_name = std.fmt.comptimePrint("{}", .{i});
         output_fields[i] = .{
             .name = field_name,
             .type = t,
@@ -85,7 +85,7 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
     }
 
     const input_type = @Type(.{ .Struct = .{
-        .layout = .Auto,
+        .layout = .auto,
         .fields = optional_input_fields[0..],
         .decls = &[_]std.builtin.Type.Declaration{},
         .is_tuple = true,
@@ -103,7 +103,7 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
     };
 
     const output_type = @Type(.{ .Struct = .{
-        .layout = .Auto,
+        .layout = .auto,
         .fields = output_fields[0..],
         .decls = &[_]std.builtin.Type.Declaration{},
         .is_tuple = true,
@@ -122,7 +122,6 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
         .is_var_args = false,
         .params = input_params[0..],
         .return_type = output_type,
-        .alignment = 0,
     } });
     const fn_ptr_type = @Type(.{ .Pointer = .{
         .size = std.builtin.Type.Pointer.Size.One,
@@ -134,7 +133,7 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
         .sentinel = null,
         .alignment = 0,
     } });
-    var fn_field: std.builtin.Type.StructField = .{
+    const fn_field: std.builtin.Type.StructField = .{
         .name = "func",
         .type = fn_ptr_type,
         .default_value = null,
@@ -143,7 +142,7 @@ fn createTaskInternalsType(comptime input_types: []const type, comptime output_t
     };
 
     return @Type(.{ .Struct = .{
-        .layout = .Auto,
+        .layout = .auto,
         .fields = &[_]std.builtin.Type.StructField{ input_field, fn_field, output_field },
         .decls = &[_]std.builtin.Type.Declaration{},
         .is_tuple = false,
@@ -162,7 +161,15 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
             const result = try a.create(TaskImpl);
             errdefer a.destroy(result);
 
-            result.* = TaskImpl{ .interface = Task{ .id = id, .checkAllInputsSetFn = TaskImpl._checkAllInputsSet, .executeFn = TaskImpl._execute, .freeFn = TaskImpl._free }, .internals = Internals{ .func = func_ptr, .outputs = init_outputs } };
+            result.* = TaskImpl{
+                .interface = Task{
+                    .id = id,
+                    .checkAllInputsSetFn = TaskImpl._checkAllInputsSet,
+                    .executeFn = TaskImpl._execute,
+                    .freeFn = TaskImpl._free,
+                },
+                .internals = Internals{ .func = func_ptr, .outputs = init_outputs },
+            };
             return result;
         }
 
@@ -195,7 +202,7 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
         }
 
         fn _checkAllInputsSet(ptr: *Task) bool {
-            const self = @fieldParentPtr(TaskImpl, "interface", ptr);
+            const self: *TaskImpl = @fieldParentPtr("interface", ptr);
             return self.checkAllInputsSet();
         }
 
@@ -209,7 +216,7 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
         }
 
         fn _execute(ptr: *Task) void {
-            const self = @fieldParentPtr(TaskImpl, "interface", ptr);
+            const self: *TaskImpl = @fieldParentPtr("interface", ptr);
             self.execute();
         }
 
@@ -218,7 +225,7 @@ pub fn createTaskType(comptime input_types: []const type, comptime output_types:
         }
 
         fn _free(ptr: *Task, allocator: std.mem.Allocator) void {
-            const self = @fieldParentPtr(TaskImpl, "interface", ptr);
+            const self: *TaskImpl = @fieldParentPtr("interface", ptr);
             self.free(allocator);
         }
     };

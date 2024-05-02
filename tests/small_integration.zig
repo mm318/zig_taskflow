@@ -44,7 +44,7 @@ test "small integration test" {
         \\
     , .{});
 
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
 
     const TestTaskType1 = Task.createTaskType(
         &.{},
@@ -59,7 +59,11 @@ test "small integration test" {
     defer flowgraph.deinit();
 
     var task1 = try flowgraph.newTask(TestTaskType1, .{ 0, 0, 0 }, &dummyTaskFunc1);
-    var task2 = try flowgraph.newTask(TestTaskType2, .{ DummyStruct{ .name = "none", .depends_on = undefined, .value = undefined }, DummyError.Error3 }, &dummyTaskFunc2);
+    var task2 = try flowgraph.newTask(
+        TestTaskType2,
+        .{ DummyStruct{ .name = "none", .depends_on = undefined, .value = undefined }, DummyError.Error3 },
+        &dummyTaskFunc2,
+    );
     std.debug.print("\n", .{});
     printTaskInfo(task1, "task1", "post-createTaskType()");
     printTaskInfo(task2, "task2", "post-createTaskType()");

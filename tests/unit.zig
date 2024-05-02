@@ -27,7 +27,7 @@ test "cycle detection" {
         \\
     , .{});
 
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
 
     const TestTaskType = Task.createTaskType(
         &.{ DummyStruct, DummyError },
@@ -37,9 +37,21 @@ test "cycle detection" {
     var flowgraph = try Flow.init(allocator);
     defer flowgraph.deinit();
 
-    var task1 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "1", .depends_on = undefined, .value = undefined }, DummyError.Error1 }, &dummyTaskFunc);
-    var task2 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "2", .depends_on = undefined, .value = undefined }, DummyError.Error2 }, &dummyTaskFunc);
-    var task3 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "3", .depends_on = undefined, .value = undefined }, DummyError.Error3 }, &dummyTaskFunc);
+    const task1 = try flowgraph.newTask(
+        TestTaskType,
+        .{ DummyStruct{ .name = "1", .depends_on = undefined, .value = undefined }, DummyError.Error1 },
+        &dummyTaskFunc,
+    );
+    const task2 = try flowgraph.newTask(
+        TestTaskType,
+        .{ DummyStruct{ .name = "2", .depends_on = undefined, .value = undefined }, DummyError.Error2 },
+        &dummyTaskFunc,
+    );
+    const task3 = try flowgraph.newTask(
+        TestTaskType,
+        .{ DummyStruct{ .name = "3", .depends_on = undefined, .value = undefined }, DummyError.Error3 },
+        &dummyTaskFunc,
+    );
 
     try flowgraph.connect(task1, 0, task2, 0);
     try flowgraph.connect(task1, 1, task2, 1);
@@ -68,7 +80,7 @@ test "incomplete inputs detection" {
         \\
     , .{});
 
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
 
     const TestTaskType = Task.createTaskType(
         &.{ DummyStruct, DummyError },
@@ -78,9 +90,21 @@ test "incomplete inputs detection" {
     var flowgraph = try Flow.init(allocator);
     defer flowgraph.deinit();
 
-    var task1 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "1", .depends_on = undefined, .value = undefined }, DummyError.Error1 }, &dummyTaskFunc);
-    var task2 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "2", .depends_on = undefined, .value = undefined }, DummyError.Error2 }, &dummyTaskFunc);
-    var task3 = try flowgraph.newTask(TestTaskType, .{ DummyStruct{ .name = "3", .depends_on = undefined, .value = undefined }, DummyError.Error3 }, &dummyTaskFunc);
+    const task1 = try flowgraph.newTask(
+        TestTaskType,
+        .{ DummyStruct{ .name = "1", .depends_on = undefined, .value = undefined }, DummyError.Error1 },
+        &dummyTaskFunc,
+    );
+    const task2 = try flowgraph.newTask(
+        TestTaskType,
+        .{ DummyStruct{ .name = "2", .depends_on = undefined, .value = undefined }, DummyError.Error2 },
+        &dummyTaskFunc,
+    );
+    const task3 = try flowgraph.newTask(
+        TestTaskType,
+        .{ DummyStruct{ .name = "3", .depends_on = undefined, .value = undefined }, DummyError.Error3 },
+        &dummyTaskFunc,
+    );
 
     try flowgraph.connect(task1, 0, task2, 0);
     // try flowgraph.connect(task1, 1, task2, 1);  // task 2 does not have all of its inputs set

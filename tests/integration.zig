@@ -23,7 +23,7 @@ var scratch_allocator: ?*const std.mem.Allocator = null;
 
 const Data = struct {
     x: []const u8,
-    y: std.atomic.Atomic(usize),
+    y: std.atomic.Value(usize),
 };
 
 const TaskA = Task.createTaskType(&.{}, &.{i64});
@@ -41,7 +41,7 @@ fn func_b() struct { []const u8 } {
 const TaskC = Task.createTaskType(&.{i64}, &.{ bool, ?*const u8 });
 
 fn func_c(x: *const i64) struct { bool, ?*const u8 } {
-    var result2 = scratch_allocator.?.create(u8) catch unreachable;
+    const result2 = scratch_allocator.?.create(u8) catch unreachable;
     result2.* = @truncate(@as(u64, @bitCast(x.*)));
     return .{ @mod(x.*, 2) == 1, result2 };
 }
@@ -49,9 +49,9 @@ fn func_c(x: *const i64) struct { bool, ?*const u8 } {
 const TaskD = Task.createTaskType(&.{i64}, &.{ ?*const bool, Data });
 
 fn func_d(x: *const i64) struct { ?*const bool, Data } {
-    var result1 = scratch_allocator.?.create(bool) catch unreachable;
+    const result1 = scratch_allocator.?.create(bool) catch unreachable;
     result1.* = @mod(x.*, 2) == 0;
-    return .{ result1, Data{ .x = "From Task D", .y = std.atomic.Atomic(usize).init(@as(usize, @bitCast(x.*))) } };
+    return .{ result1, Data{ .x = "From Task D", .y = std.atomic.Value(usize).init(@as(usize, @bitCast(x.*))) } };
 }
 
 const TaskE = Task.createTaskType(&.{[]const u8}, &.{std.ArrayList(u8)});
@@ -78,7 +78,7 @@ fn func_g(x: *const Data, y: *const std.ArrayList(u8)) struct { u32, bool } {
     var hasher = std.hash.Wyhash.init(0);
     std.hash.autoHashStrat(&hasher, x.x, std.hash.Strategy.Deep);
     std.hash.autoHashStrat(&hasher, y.items, std.hash.Strategy.Deep);
-    return .{ @truncate(hasher.final()), std.ascii.eqlIgnoreCase(y.items, x.x) or @mod(x.y.load(.Monotonic), 2) == 0 };
+    return .{ @truncate(hasher.final()), std.ascii.eqlIgnoreCase(y.items, x.x) or @mod(x.y.load(.monotonic), 2) == 0 };
 }
 
 const TaskH = Task.createTaskType(&.{ bool, u32 }, &.{ Data, std.ArrayList(bool) });
@@ -88,7 +88,7 @@ fn func_h(x: *const bool, y: *const u32) struct { Data, std.ArrayList(bool) } {
     for (0..result2.capacity) |_| {
         result2.append(x.*) catch unreachable;
     }
-    return .{ Data{ .x = "From Task H", .y = std.atomic.Atomic(usize).init(@as(usize, y.*)) }, result2 };
+    return .{ Data{ .x = "From Task H", .y = std.atomic.Value(usize).init(@as(usize, y.*)) }, result2 };
 }
 
 const TaskI = Task.createTaskType(&.{ bool, u32 }, &.{[5]u16});
@@ -134,21 +134,21 @@ test "integration test" {
         \\
     , .{});
 
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
 
     var flowgraph = try Flow.init(allocator);
     defer flowgraph.deinit();
 
-    var task_a = try flowgraph.newTask(TaskA, undefined, func_a);
-    var task_b = try flowgraph.newTask(TaskB, undefined, func_b);
-    var task_c = try flowgraph.newTask(TaskC, undefined, func_c);
-    var task_d = try flowgraph.newTask(TaskD, undefined, func_d);
-    var task_e = try flowgraph.newTask(TaskE, undefined, func_e);
-    var task_f = try flowgraph.newTask(TaskF, undefined, func_f);
-    var task_g = try flowgraph.newTask(TaskG, undefined, func_g);
-    var task_h = try flowgraph.newTask(TaskH, undefined, func_h);
-    var task_i = try flowgraph.newTask(TaskI, undefined, func_i);
-    var task_j = try flowgraph.newTask(TaskJ, undefined, func_j);
+    const task_a = try flowgraph.newTask(TaskA, undefined, func_a);
+    const task_b = try flowgraph.newTask(TaskB, undefined, func_b);
+    const task_c = try flowgraph.newTask(TaskC, undefined, func_c);
+    const task_d = try flowgraph.newTask(TaskD, undefined, func_d);
+    const task_e = try flowgraph.newTask(TaskE, undefined, func_e);
+    const task_f = try flowgraph.newTask(TaskF, undefined, func_f);
+    const task_g = try flowgraph.newTask(TaskG, undefined, func_g);
+    const task_h = try flowgraph.newTask(TaskH, undefined, func_h);
+    const task_i = try flowgraph.newTask(TaskI, undefined, func_i);
+    const task_j = try flowgraph.newTask(TaskJ, undefined, func_j);
     var task_k = try flowgraph.newTask(TaskK, undefined, func_k);
 
     try flowgraph.connect(task_a, 0, task_c, 0);
